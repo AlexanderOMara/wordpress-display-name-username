@@ -1,0 +1,93 @@
+#!/bin/bash
+set -o errexit
+set -o nounset
+set -o pipefail
+
+wordpress_version='5.4'
+
+# Wait for and optionally create a MySQL table.
+wait_for_mysql() {
+	TERM=dumb php -- "$1" "$2" "$3" "${4:-}" \
+<<'EOF'
+<?php
+list($host, $socket) = explode(':', $argv[1], 2);
+$port = is_numeric($socket) ? (int)$socket : 0;
+$socket = $port ? null : $socket;
+$user = $argv[2];
+$pass = $argv[3];
+$table = $argv[4];
+$tries = 10;
+do {
+	echo 'Checking for MySQL connection...', "\n";
+	$mysql = new mysqli($host, $user, $pass, '', $port, $socket);
+	if ($mysql->connect_error) {
+		if (--$tries <= 0) {
+			exit(1);
+		}
+		sleep(3);
+	}
+}
+while ($mysql->connect_error);
+if (!empty($table)) {
+	$table_esc = $mysql->real_escape_string($table);
+	if (!$mysql->query("CREATE DATABASE IF NOT EXISTS `{$table_esc}`")) {
+		echo $mysql->error, "\n";
+		$mysql->close();
+		exit(1);
+	}
+}
+$mysql->close();
+EOF
+}
+
+# Download WordPress if not yet downloaded.
+if [[ ! -f wp-load.php ]]; then
+	echo 'Downloading WordPress: Starting'
+
+	wp core download \
+		--version="${wordpress_version}"
+
+	echo 'Downloading WordPress: Complete'
+fi
+
+# Create WordPress config if not created.
+if [[ ! -f wp-config.php ]]; then
+	echo 'Installing WordPress: Starting'
+
+	wp config create \
+		--dbhost="${WORDPRESS_DB_HOST}" \
+		--dbuser="${WORDPRESS_DB_USER}" \
+		--dbpass="${WORDPRESS_DB_PASS}" \
+		--dbname="${WORDPRESS_DB_NAME}" \
+		--dbprefix="${WORDPRESS_DB_PREFIX}" \
+		--skip-check \
+		--extra-php <<'EOF'
+define('WP_DEBUG', filter_var($_ENV['WORDPRESS_CFG_WP_DEBUG'] ?? false, FILTER_VALIDATE_BOOLEAN));
+define('WP_DEBUG_LOG', filter_var($_ENV['WORDPRESS_CFG_DEBUG_LOG'] ?? false, FILTER_VALIDATE_BOOLEAN));
+define('SCRIPT_DEBUG', filter_var($_ENV['WORDPRESS_CFG_SCRIPT_DEBUG'] ?? false, FILTER_VALIDATE_BOOLEAN));
+define('AUTOMATIC_UPDATER_DISABLED', filter_var($_ENV['WORDPRESS_CFG_AUTOMATIC_UPDATER_DISABLED'] ?? false, FILTER_VALIDATE_BOOLEAN));
+
+if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+	define('WP_DEBUG_DISPLAY', false);
+	@ini_set('display_errors', 0);
+}
+EOF
+
+	# Wait for the DB host to be ready.
+	wait_for_mysql \
+		"${WORDPRESS_DB_HOST}" \
+		"${WORDPRESS_DB_USER}" \
+		"${WORDPRESS_DB_PASS}"
+
+	# Create database if necessary and install.
+	wp db create || true
+	wp core install \
+		--url="${WORDPRESS_INSTALL_URL}" \
+		--title="${WORDPRESS_INSTALL_TITLE}" \
+		--admin_user="${WORDPRESS_INSTALL_ADMIN_USER}" \
+		--admin_email="${WORDPRESS_INSTALL_ADMIN_EMAIL}" \
+		--admin_password="${WORDPRESS_INSTALL_ADMIN_PASS}" \
+		--skip-email
+
+	echo 'Installing WordPress: Complete'
+fi

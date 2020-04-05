@@ -1,0 +1,14 @@
+language: php
+
+script:
+- ./scripts/dist.sh "${TRAVIS_TAG:-0.0.0}"
+
+deploy:
+  provider: releases
+  api_key: $GITHUB_API_KEY
+  file_glob: true
+  file:
+  - dist/*.zip
+  skip_cleanup: true
+  on:
+    tags: true
