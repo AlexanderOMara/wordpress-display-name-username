@@ -2,7 +2,7 @@
 
 Force display name to be username
 
-[![travis-ci](https://travis-ci.org/AlexanderOMara/wordpress-display-name-username.svg?branch=master)](https://travis-ci.org/AlexanderOMara/wordpress-display-name-username)
+[![travis-ci](https://travis-ci.com/AlexanderOMara/wordpress-display-name-username.svg?branch=master)](https://travis-ci.com/AlexanderOMara/wordpress-display-name-username)
 
 
 # Overview
